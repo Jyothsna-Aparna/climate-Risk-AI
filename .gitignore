@@ -1,0 +1,4 @@
+climate_risk.db
+__pycache__/
+*.pyc
+.streamlit/secrets.toml
