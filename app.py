@@ -1,203 +1,288 @@
 import streamlit as st
 import requests
+import pandas as pd
 import folium
 from streamlit_folium import st_folium
-import pandas as pd
 
+import db
+
+# ============================================================
+# PAGE CONFIG
+# ============================================================
 st.set_page_config(
-    page_title="Global Climate Risk Radar | Early-Warning AI", 
-    page_icon="🌍", 
+    page_title="Global Climate Risk & Early Warning AI Radar",
+    page_icon="🌍",
     layout="wide",
-    initial_sidebar_state="expanded"
 )
 
-# Custom CSS
-st.markdown("""
+db.init_db()
+
+# ============================================================
+# STYLING (foreground / background)
+# ============================================================
+st.markdown(
+    """
     <style>
-    .main-header {
-        font-size:2.2rem;
-        font-weight:700;
-        color:#006699;
-        text-align:center;
-        margin-bottom:0px;
+    .stApp {
+        background-color: #0e1117;
+        color: #fafafa;
     }
-    .sub-header {
-        font-size:1.0rem;
-        text-align:center;
-        color:#555555;
-        margin-bottom:20px;
+    .risk-box {
+        padding: 1.2rem;
+        border-radius: 10px;
+        margin-bottom: 1rem;
+        font-size: 1.05rem;
+    }
+    .risk-low { background-color: #143d2b; border: 1px solid #2ecc71; }
+    .risk-medium { background-color: #4d3b12; border: 1px solid #f1c40f; }
+    .risk-high { background-color: #4d1414; border: 1px solid #e74c3c; }
+    .target-box {
+        background-color: #113322;
+        border-left: 4px solid #2ecc71;
+        padding: 0.6rem 1rem;
+        border-radius: 6px;
+        margin-top: 0.5rem;
+    }
+    .pipeline-note {
+        color: #888888;
+        font-size: 0.8rem;
+        margin-top: -0.5rem;
     }
     </style>
-""", unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True,
+)
 
-# Multilingual Translations
-TRANSLATIONS = {
+# ============================================================
+# LANGUAGE STRINGS
+# ============================================================
+LANG = {
     "English": {
         "title": "🌍 Global Climate Risk & Early Warning AI Radar",
         "subtitle": "UNDP SDG 13 (Climate Action) | Real-Time Environmental Risk Intelligence",
+        "select_lang": "Choose Language",
         "select_loc": "📍 Select Location",
         "enter_city": "Enter City (Global / India):",
+        "target": "Target",
+        "fetching": "Fetching live climate data...",
+        "current_conditions": "Current Conditions",
         "temp": "Temperature",
         "humidity": "Humidity",
-        "rain": "Rainfall",
         "wind": "Wind Speed",
-        "threat_level": "🚨 AI Risk Assessment Engine",
-        "overall_risk": "Overall Threat Score",
-        "flood": "Flood Threat",
-        "heat": "Extreme Heat Threat",
-        "wildfire": "Wildfire Hazard",
-        "action_alert": "💡 AI Emergency Recommendation",
-        "high_risk": "🔴 HIGH RISK: Deploy Immediate Climate Emergency Services!",
-        "mod_risk": "🟡 MODERATE RISK: Continuous Monitoring & Early Warning Active.",
-        "low_risk": "🟢 LOW RISK: Stable Environmental Conditions.",
-        "map_title": "🗺️ Live Geo-Spatial Climate Threat Radar"
+        "risk_level": "Overall Risk Level",
+        "low": "LOW",
+        "medium": "MODERATE",
+        "high": "HIGH",
+        "city_not_found": "City not found. Try a different spelling or add the country name (e.g. 'Hyderabad, India').",
+        "api_error": "Could not fetch live data right now. Please try again in a moment.",
+        "history": "Temperature History (from database)",
+        "live": "🔴 Live data fetched just now",
+        "cached": "🗄️ Served from database (last updated {mins} min ago)",
+        "refresh_hours": "Pipeline refresh interval (hours)",
     },
-    "Telugu (తెలుగు)": {
+    "తెలుగు": {
         "title": "🌍 గ్లోబల్ క్లైమేట్ రిస్క్ & ఎర్లీ వార్నింగ్ AI రాడార్",
-        "subtitle": "UNDP SDG 13 (వాతావరణ చర్య) | ప్రత్యక్ష పర్యావరణ ముప్పు అంచనా",
-        "select_loc": "📍 ప్రాంతాన్ని ఎంచుకోండి",
-        "enter_city": "నగరం పేరు టైప్ చేయండి (భారతదేశం / ప్రపంచం):",
+        "subtitle": "UNDP SDG 13 (క్లైమేట్ యాక్షన్) | రియల్-టైమ్ ఎన్విరాన్మెంటల్ రిస్క్ ఇంటెలిజెన్స్",
+        "select_lang": "భాష ఎంచుకోండి",
+        "select_loc": "📍 ప్రదేశం ఎంచుకోండి",
+        "enter_city": "నగరం నమోదు చేయండి (గ్లోబల్ / ఇండియా):",
+        "target": "లక్ష్యం",
+        "fetching": "లైవ్ క్లైమేట్ డేటా తీసుకుంటోంది...",
+        "current_conditions": "ప్రస్తుత పరిస్థితులు",
         "temp": "ఉష్ణోగ్రత",
-        "humidity": "తేమ (Humidity)",
-        "rain": "వర్షపాతం",
+        "humidity": "తేమ",
         "wind": "గాలి వేగం",
-        "threat_level": "🚨 AI రిస్క్ అసెస్మెంట్ ఇంజిన్",
-        "overall_risk": "మొత్తం ముప్పు స్కోర్",
-        "flood": "వరద ప్రమాదం",
-        "heat": "తీవ్రమైన వేడి ప్రమాదం",
-        "wildfire": "అడవి కార్చిచ్చు ప్రమాదం",
-        "action_alert": "💡 AI అత్యవసర సూచనలు",
-        "high_risk": "🔴 తీవ్రమైన ప్రమాదం: తక్షణ అత్యవసర చర్యలు చేపట్టండి!",
-        "mod_risk": "🟡 మితమైన ప్రమాదం: నిరంతర పర్యవేక్షణ అవసరం.",
-        "low_risk": "🟢 సాధారణ ప్రమాదం: పర్యావరణ పరిస్థితులు సాధారణంగా ఉన్నాయి.",
-        "map_title": "🗺️ లైవ్ జియో-స్పేషియల్ క్లైమేట్ మ్యాప్"
+        "risk_level": "మొత్తం రిస్క్ స్థాయి",
+        "low": "తక్కువ",
+        "medium": "మధ్యస్థం",
+        "high": "అధికం",
+        "city_not_found": "నగరం కనుగొనబడలేదు. వేరే స్పెల్లింగ్ ప్రయత్నించండి లేదా దేశం పేరు జోడించండి.",
+        "api_error": "ప్రస్తుతం లైవ్ డేటా తీసుకోలేకపోయాం. కొద్ది సేపటిలో మళ్ళీ ప్రయత్నించండి.",
+        "history": "ఉష్ణోగ్రత చరిత్ర (డేటాబేస్ నుండి)",
+        "live": "🔴 ఇప్పుడే లైవ్ డేటా తీసుకోబడింది",
+        "cached": "🗄️ డేటాబేస్ నుండి ({mins} నిమిషాల క్రితం అప్డేట్ అయింది)",
+        "refresh_hours": "పైప్‌లైన్ రిఫ్రెష్ ఇంటర్వల్ (గంటలు)",
     },
-    "Hindi (हिंदी)": {
-        "title": "🌍 वैश्विक जलवायु जोखिम एवं प्रारंभिक चेतावनी AI रडार",
-        "subtitle": "UNDP SDG 13 (जलवायु कार्रवाई) | वास्तविक समय पर्यावरण जोखिम मूल्यांकन",
-        "select_loc": "📍 स्थान चुनें",
-        "enter_city": "शहर का नाम दर्ज करें (भारत / वैश्विक):",
-        "temp": "तापमान",
-        "humidity": "आर्द्रता",
-        "rain": "वर्षा",
-        "wind": "हवा की गति",
-        "threat_level": "🚨 AI जोखिम मूल्यांकन इंजन",
-        "overall_risk": "कुल जोखिम स्कोर",
-        "flood": "बाढ़ का खतरा",
-        "heat": "अत्यधिक गर्मी का खतरा",
-        "wildfire": "दावानल का खतरा",
-        "action_alert": "💡 AI अनुशंसित आपातकालीन कार्रवाई",
-        "high_risk": "🔴 उच्च जोखिम: तत्काल जलवायु आपातकालीन सेवाएं तैनात करें!",
-        "mod_risk": "🟡 मध्यम जोखिम: सतत निगरानी जारी रखें।",
-        "low_risk": "🟢 कम जोखिम: सामान्य पर्यावरणीय स्थिति।",
-        "map_title": "🗺️ लाइव जियो-स्पेशियल क्लाइमेट मैप"
-    }
 }
 
-# Sidebar Banner
-st.sidebar.markdown("""
-    <div style="text-align: center; padding: 12px; background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); border-radius: 10px; color: white; margin-bottom: 15px;">
-        <h2 style="margin:0; font-size: 26px;">🌍⚡</h2>
-        <h3 style="margin:4px 0 0 0; color: #4fc3f7; font-size: 15px;">EARLY-WARNING AI</h3>
-        <p style="margin:2px 0 0 0; font-size: 11px; opacity: 0.8;">Global SDG 13 Intelligence Radar</p>
-    </div>
-""", unsafe_allow_html=True)
+# ============================================================
+# SIDEBAR
+# ============================================================
+with st.sidebar:
+    st.markdown("## 🌍⚡ EARLY-WARNING AI")
+    st.caption("Global SDG 13 Intelligence Radar")
 
-lang = st.sidebar.selectbox("🌐 Choose Language / భాష", ["English", "Telugu (తెలుగు)", "Hindi (हिंदी)"])
-t = TRANSLATIONS[lang]
+    lang_choice = st.selectbox("🌐 " + LANG["English"]["select_lang"], list(LANG.keys()))
+    t = LANG[lang_choice]
 
-st.sidebar.header(t["select_loc"])
-city = st.sidebar.text_input(t["enter_city"], "Hyderabad")
+    st.markdown(f"### {t['select_loc']}")
+    city = st.text_input(t["enter_city"], value="Hyderabad")
 
-def get_coordinates(city_name):
-    url = f"https://geocoding-api.open-meteo.com/v1/search?name={city_name}&count=1&language=en&format=json"
-    res = requests.get(url).json()
-    if res.get("results"):
-        loc = res["results"][0]
-        return loc["latitude"], loc["longitude"], loc["name"], loc.get("country", "")
-    return None, None, None, None
+    refresh_hours = st.slider(t["refresh_hours"], min_value=1, max_value=24, value=3)
 
-lat, lon, name, country = get_coordinates(city)
+# ============================================================
+# MAIN TITLE
+# ============================================================
+st.markdown(f"<h1 style='text-align:center;color:#5dade2;'>{t['title']}</h1>", unsafe_allow_html=True)
+st.markdown(f"<p style='text-align:center;color:#bbbbbb;'>{t['subtitle']}</p>", unsafe_allow_html=True)
 
-st.markdown(f"<div class='main-header'>{t['title']}</div>", unsafe_allow_html=True)
-st.markdown(f"<div class='sub-header'>{t['subtitle']}</div>", unsafe_allow_html=True)
 
-if lat and lon:
-    st.sidebar.success(f"📍 Target: **{name}, {country}**")
-    
-    weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m&hourly=temperature_2m,precipitation&forecast_days=1"
-    data = requests.get(weather_url).json()
-    
-    curr = data['current']
-    temp = curr['temperature_2m']
-    humidity = curr['relative_humidity_2m']
-    precip = curr['precipitation']
-    wind = curr['wind_speed_10m']
+# ============================================================
+# EXTERNAL DATA FETCH (no API key needed — Open-Meteo)
+# ============================================================
+def geocode_city(city_name: str):
+    url = "https://geocoding-api.open-meteo.com/v1/search"
+    resp = requests.get(url, params={"name": city_name, "count": 1}, timeout=10)
+    resp.raise_for_status()
+    payload = resp.json()
+    results = payload.get("results")
+    if not results:
+        return None
+    place = results[0]
+    return {
+        "name": place.get("name"),
+        "country": place.get("country"),
+        "lat": place.get("latitude"),
+        "lon": place.get("longitude"),
+    }
 
-    flood_risk = min(100, int((precip / 15.0) * 100)) if precip > 0 else 5
-    heat_risk = min(100, int(((temp - 30) / 15.0) * 100)) if temp > 30 else 8
-    fire_risk = min(100, int(((temp / 40.0) * 0.5 + (100 - humidity)/100.0 * 0.5) * 100)) if temp > 32 and humidity < 35 else 12
 
-    overall_score = max(flood_risk, heat_risk, fire_risk)
-    
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric(t["temp"], f"{temp} °C")
-    m2.metric(t["humidity"], f"{humidity} %")
-    m3.metric(t["rain"], f"{precip} mm")
-    m4.metric(t["wind"], f"{wind} km/h")
+def fetch_weather(lat: float, lon: float):
+    url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation",
+        "timezone": "auto",
+    }
+    resp = requests.get(url, params=params, timeout=10)
+    resp.raise_for_status()
+    payload = resp.json()
+    if "current" not in payload:
+        return None
+    return payload["current"]
 
-    st.markdown("---")
 
-    col_map, col_risk = st.columns([1.8, 1.2])
+def compute_risk(temp, wind, precip):
+    temp = temp or 0
+    wind = wind or 0
+    precip = precip or 0
+    score = 0
+    if temp >= 40 or temp <= 2:
+        score += 2
+    elif temp >= 35 or temp <= 5:
+        score += 1
+    if wind >= 40:
+        score += 2
+    elif wind >= 25:
+        score += 1
+    if precip >= 20:
+        score += 2
+    elif precip >= 5:
+        score += 1
+    if score >= 4:
+        return "high"
+    elif score >= 2:
+        return "medium"
+    return "low"
 
-    with col_risk:
-        st.subheader(t["threat_level"])
-        st.write(f"### {t['overall_risk']}: `{overall_score}%`")
-        
-        st.write(f"🌊 **{t['flood']}**")
-        st.progress(flood_risk / 100)
-        
-        st.write(f"☀️ **{t['heat']}**")
-        st.progress(heat_risk / 100)
-        
-        st.write(f"🔥 **{t['wildfire']}**")
-        st.progress(fire_risk / 100)
 
-        st.markdown("---")
-        st.subheader(t["action_alert"])
-        if overall_score > 60:
-            st.error(t["high_risk"])
-        elif overall_score > 30:
-            st.warning(t["mod_risk"])
+# ============================================================
+# PIPELINE: reuse DB record if fresh, else fetch + store
+# ============================================================
+def run_pipeline(city_name: str, max_age_hours: float):
+    latest = db.get_latest_reading(city_name)
+
+    if latest is not None and not db.is_stale(latest["fetched_at"], max_age_hours):
+        return latest, False  # served from DB, not a fresh fetch
+
+    location = geocode_city(city_name)
+    if location is None:
+        return None, None
+
+    current = fetch_weather(location["lat"], location["lon"])
+    if current is None:
+        return None, None
+
+    temp = current.get("temperature_2m")
+    humidity = current.get("relative_humidity_2m")
+    wind = current.get("wind_speed_10m")
+    precip = current.get("precipitation")
+    risk = compute_risk(temp, wind, precip)
+
+    db.insert_reading(
+        city=city_name,
+        country=location["country"],
+        lat=location["lat"],
+        lon=location["lon"],
+        temperature=temp,
+        humidity=humidity,
+        wind_speed=wind,
+        precipitation=precip,
+        risk_level=risk,
+    )
+
+    fresh = db.get_latest_reading(city_name)
+    return fresh, True
+
+
+# ============================================================
+# MAIN FLOW
+# ============================================================
+if city.strip():
+    with st.spinner(t["fetching"]):
+        reading, was_fresh_fetch = run_pipeline(city.strip(), refresh_hours)
+
+    if reading is None:
+        st.error(t["city_not_found"] + " / " + t["api_error"])
+    else:
+        st.markdown(
+            f"<div class='target-box'>📍 <b>{t['target']}:</b> {reading['city']}, {reading['country']}</div>",
+            unsafe_allow_html=True,
+        )
+
+        from datetime import datetime
+        fetched_dt = datetime.fromisoformat(reading["fetched_at"])
+        mins_ago = int((datetime.utcnow() - fetched_dt).total_seconds() // 60)
+
+        if was_fresh_fetch:
+            st.caption(t["live"])
         else:
-            st.success(t["low_risk"])
+            st.caption(t["cached"].format(mins=mins_ago))
 
-    with col_map:
-        st.subheader(t["map_title"])
-        map_color = "red" if overall_score > 60 else ("orange" if overall_score > 30 else "green")
-        m = folium.Map(location=[lat, lon], zoom_start=9)
-        
-        folium.Circle(
-            location=[lat, lon],
-            radius=15000,
-            color=map_color,
-            fill=True,
-            fill_color=map_color,
-            fill_opacity=0.3,
-            popup=f"{name}: {overall_score}% Threat Score"
-        ).add_to(m)
+        col1, col2 = st.columns([1, 1])
 
-        st_folium(m, width="100%", height=400)
+        with col1:
+            st.subheader(t["current_conditions"])
+            m1, m2, m3 = st.columns(3)
+            m1.metric(t["temp"], f"{reading['temperature']} °C")
+            m2.metric(t["humidity"], f"{reading['humidity']} %")
+            m3.metric(t["wind"], f"{reading['wind_speed']} km/h")
 
-    st.markdown("---")
-    st.subheader("📈 24-Hour Analytics Trend")
-    hourly_df = pd.DataFrame({
-        "Time": [f"{i}:00" for i in range(24)],
-        "Temp (°C)": data['hourly']['temperature_2m'][:24],
-        "Rain (mm)": data['hourly']['precipitation'][:24]
-    })
-    st.line_chart(hourly_df.set_index("Time"))
+            risk = reading["risk_level"]
+            st.markdown(
+                f"<div class='risk-box risk-{risk}'><b>{t['risk_level']}:</b> {t[risk]}</div>",
+                unsafe_allow_html=True,
+            )
 
+        with col2:
+            fmap = folium.Map(location=[reading["lat"], reading["lon"]], zoom_start=8, tiles="CartoDB dark_matter")
+            folium.Marker(
+                [reading["lat"], reading["lon"]],
+                tooltip=f"{reading['city']}, {reading['country']}",
+                icon=folium.Icon(color="red"),
+            ).add_to(fmap)
+            st_folium(fmap, height=350, width=None)
+
+        # ------------------------------------------------------
+        # HISTORY FROM DATABASE
+        # ------------------------------------------------------
+        history = db.get_history(reading["city"], limit=50)
+        if len(history) >= 2:
+            st.subheader(t["history"])
+            df = pd.DataFrame(history)
+            df["fetched_at"] = pd.to_datetime(df["fetched_at"])
+            df = df.set_index("fetched_at")
+            st.line_chart(df[["temperature"]])
 else:
-    st.error("Invalid City Name!")
-    
+    st.info(t["enter_city"])
