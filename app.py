@@ -266,7 +266,7 @@ if city.strip():
             )
 
         with col2:
-            fmap = folium.Map(location=[reading["lat"], reading["lon"]], zoom_start=8, tiles="CartoDB dark_matter")
+            fmap = folium.Map(location=[reading["lat"], reading["lon"]], zoom_start=8, tiles="OpenStreetMap")
             folium.Marker(
                 [reading["lat"], reading["lon"]],
                 tooltip=f"{reading['city']}, {reading['country']}",
