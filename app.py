@@ -48,6 +48,14 @@ st.markdown(
         font-size: 0.8rem;
         margin-top: -0.5rem;
     }
+    [data-testid="stMetricValue"] {
+    color: #ffffff !important;
+    font-size: 1.6rem !important;
+}
+[data-testid="stMetricLabel"] {
+    color: #cccccc !important;
+}
+    
     </style>
     """,
     unsafe_allow_html=True,
